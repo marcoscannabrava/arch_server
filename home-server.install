@@ -1,0 +1,12 @@
+post_install() {
+  echo "============================================"
+  echo " home-server installed successfully!"
+  echo ""
+  echo " Run 'home-server-setup' to configure your"
+  echo " server with Caddy, Docker, and SSH."
+  echo "============================================"
+}
+
+post_upgrade() {
+  post_install
+}

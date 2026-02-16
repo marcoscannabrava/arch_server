@@ -1,0 +1,4 @@
+hello.{{DOMAIN}} {
+	root * /srv/home-server/hello
+	file_server
+}

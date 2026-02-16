@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="/srv/home-server"
+HELLO_DIR="$SERVER_DIR/hello"
+CADDYFILE="/etc/caddy/Caddyfile"
+
+# --- Prompt for domain ---
+
+read -rp "Enter your server domain name (e.g. example.com): " DOMAIN
+
+if [[ -z "$DOMAIN" ]]; then
+  echo "Error: domain name cannot be empty." >&2
+  exit 1
+fi
+
+echo ""
+echo "Setting up home-server for: $DOMAIN"
+echo "  - hello.$DOMAIN -> static HTML"
+echo ""
+
+# --- Create directories ---
+
+sudo mkdir -p "$HELLO_DIR"
+
+# --- Hello World static site ---
+
+sudo cp "$SCRIPT_DIR/index.html" "$HELLO_DIR/index.html"
+echo "Installed $HELLO_DIR/index.html"
+
+# --- Caddyfile ---
+
+sudo cp "$CADDYFILE" "$CADDYFILE.bak" 2>/dev/null || true
+
+sed "s/{{DOMAIN}}/$DOMAIN/g" "$SCRIPT_DIR/Caddyfile.template" | sudo tee "$CADDYFILE" > /dev/null
+echo "Installed $CADDYFILE"
+
+# --- Enable and start services ---
+
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now sshd
+echo "Enabled sshd"
+
+sudo systemctl enable --now docker
+echo "Enabled docker"
+
+sudo systemctl enable --now caddy
+echo "Enabled caddy"
+
+echo ""
+echo "Done! Make sure DNS for hello.$DOMAIN points to this server."
+echo "Caddy will automatically obtain TLS certificates via Let's Encrypt."
