@@ -6,7 +6,9 @@ RUN useradd -m builder && \
     echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
 
 WORKDIR /home/builder/pkg
-COPY --chown=builder:builder PKGBUILD home-server.install home-server-setup ./
+COPY --chown=builder:builder PKGBUILD home-server.install home-server-setup \
+     cloudflare-ddns cloudflare-ddns.conf.example \
+     cloudflare-ddns.service cloudflare-ddns.timer ./
 
 USER builder
 RUN sudo chown -R builder:builder /home/builder/pkg

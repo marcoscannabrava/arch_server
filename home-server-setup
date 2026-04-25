@@ -49,6 +49,38 @@ echo "Enabled docker"
 sudo systemctl enable --now caddy
 echo "Enabled caddy"
 
+# --- Cloudflare DDNS ---
+
+CF_CONFIG="/etc/home-server/cloudflare-ddns.conf"
+
+if [[ -f "$CF_CONFIG" ]]; then
+  echo "$CF_CONFIG already exists; leaving DDNS config untouched."
+else
+  read -rsp "Cloudflare API token (leave blank to skip DDNS): " CF_API_TOKEN
+  echo ""
+  if [[ -n "$CF_API_TOKEN" ]]; then
+    read -rp "Cloudflare Zone ID for $DOMAIN: " CF_ZONE_ID
+    read -rp "DNS records to keep updated (comma-separated) [hello.$DOMAIN]: " CF_RECORDS
+    CF_RECORDS="${CF_RECORDS:-hello.$DOMAIN}"
+
+    sudo install -d -m 755 /etc/home-server
+    sudo install -m 600 /dev/null "$CF_CONFIG"
+    sudo tee "$CF_CONFIG" > /dev/null <<EOF
+CF_API_TOKEN=$CF_API_TOKEN
+CF_ZONE_ID=$CF_ZONE_ID
+CF_RECORDS=$CF_RECORDS
+EOF
+    echo "Installed $CF_CONFIG"
+  else
+    echo "Skipped Cloudflare DDNS config."
+  fi
+fi
+
+if [[ -f "$CF_CONFIG" ]]; then
+  sudo systemctl enable --now cloudflare-ddns.timer
+  echo "Enabled cloudflare-ddns.timer (runs every 5 min)"
+fi
+
 echo ""
 echo "Done! Make sure DNS for hello.$DOMAIN points to this server."
 echo "Caddy will automatically obtain TLS certificates via Let's Encrypt."

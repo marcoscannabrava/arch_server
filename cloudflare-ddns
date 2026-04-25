@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# cloudflare-ddns: update Cloudflare A records to match the current public IP.
+set -euo pipefail
+
+CONFIG_FILE="${CLOUDFLARE_DDNS_CONFIG:-/etc/home-server/cloudflare-ddns.conf}"
+STATE_FILE="${CLOUDFLARE_DDNS_STATE:-/var/lib/home-server/cloudflare-ddns.ip}"
+
+log() { echo "cloudflare-ddns: $*"; }
+die() { echo "cloudflare-ddns: $*" >&2; exit 1; }
+
+[[ -r "$CONFIG_FILE" ]] || die "config not readable: $CONFIG_FILE"
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+
+: "${CF_API_TOKEN:?must be set in $CONFIG_FILE}"
+: "${CF_ZONE_ID:?must be set in $CONFIG_FILE}"
+: "${CF_RECORDS:?must be set in $CONFIG_FILE (comma-separated A record names)}"
+
+PUBLIC_IP="$(curl -fsS --max-time 10 https://api.ipify.org \
+  || curl -fsS --max-time 10 https://ifconfig.me \
+  || true)"
+[[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not detect public IPv4"
+
+mkdir -p "$(dirname "$STATE_FILE")"
+LAST_IP=""
+[[ -r "$STATE_FILE" ]] && LAST_IP="$(cat "$STATE_FILE")"
+
+if [[ "$PUBLIC_IP" == "$LAST_IP" ]]; then
+  log "IP unchanged ($PUBLIC_IP)"
+  exit 0
+fi
+
+log "IP changed: ${LAST_IP:-<none>} -> $PUBLIC_IP"
+
+CF_API="https://api.cloudflare.com/client/v4"
+auth=(-H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json")
+
+IFS=',' read -ra RECORDS <<<"$CF_RECORDS"
+for raw in "${RECORDS[@]}"; do
+  name="$(echo "$raw" | xargs)"
+  [[ -z "$name" ]] && continue
+
+  resp="$(curl -fsS "${auth[@]}" \
+    "$CF_API/zones/$CF_ZONE_ID/dns_records?type=A&name=$name")"
+  record_id="$(echo "$resp" | jq -r '.result[0].id // empty')"
+  current_ip="$(echo "$resp" | jq -r '.result[0].content // empty')"
+
+  if [[ -z "$record_id" ]]; then
+    die "no A record named '$name' in zone $CF_ZONE_ID; create it first"
+  fi
+
+  if [[ "$current_ip" == "$PUBLIC_IP" ]]; then
+    log "$name already $PUBLIC_IP in Cloudflare"
+    continue
+  fi
+
+  payload="$(jq -nc --arg ip "$PUBLIC_IP" '{content:$ip}')"
+  result="$(curl -fsS "${auth[@]}" -X PATCH \
+    "$CF_API/zones/$CF_ZONE_ID/dns_records/$record_id" --data "$payload")"
+
+  if [[ "$(echo "$result" | jq -r '.success')" != "true" ]]; then
+    echo "$result" >&2
+    die "Cloudflare update failed for $name"
+  fi
+  log "updated $name -> $PUBLIC_IP"
+done
+
+echo "$PUBLIC_IP" > "$STATE_FILE"

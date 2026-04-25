@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Cloudflare DDNS update every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnCalendar=*:0/5
+Persistent=true
+Unit=cloudflare-ddns.service
+
+[Install]
+WantedBy=timers.target

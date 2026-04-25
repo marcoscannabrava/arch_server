@@ -1,0 +1,10 @@
+# Cloudflare API token with Zone:DNS:Edit permission for your zone.
+# Create one at https://dash.cloudflare.com/profile/api-tokens
+CF_API_TOKEN=
+
+# Zone ID — shown on the right column of your zone's overview page.
+CF_ZONE_ID=
+
+# Comma-separated A records to keep pointed at this server's public IP.
+# Each must already exist in the zone.
+CF_RECORDS=hello.example.com
