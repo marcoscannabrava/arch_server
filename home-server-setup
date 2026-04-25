@@ -2,6 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Where shared templates/assets live after install. Fall back to the script
+# directory when running from a checkout.
+if [[ -f /usr/share/home-server/Caddyfile.template ]]; then
+  ASSETS_DIR=/usr/share/home-server
+else
+  ASSETS_DIR="$SCRIPT_DIR"
+fi
 SERVER_DIR="/srv/home-server"
 SITE_DIR="$SERVER_DIR/site"
 APPS_DIR="$SERVER_DIR/apps"
@@ -36,14 +43,14 @@ sudo install -d -m 755 "$SITE_DIR" "$APPS_DIR" "$CADDY_APPS_DIR"
 
 # --- Static site ---
 
-sudo cp "$SCRIPT_DIR/index.html" "$SITE_DIR/index.html"
+sudo cp "$ASSETS_DIR/index.html" "$SITE_DIR/index.html"
 echo "Installed $SITE_DIR/index.html"
 
 # --- Caddyfile ---
 
 sudo cp "$CADDYFILE" "$CADDYFILE.bak" 2>/dev/null || true
 
-sed "s/{{DOMAIN}}/$DOMAIN/g" "$SCRIPT_DIR/Caddyfile.template" | sudo tee "$CADDYFILE" > /dev/null
+sed "s/{{DOMAIN}}/$DOMAIN/g" "$ASSETS_DIR/Caddyfile.template" | sudo tee "$CADDYFILE" > /dev/null
 echo "Installed $CADDYFILE"
 
 # --- Enable and start services ---

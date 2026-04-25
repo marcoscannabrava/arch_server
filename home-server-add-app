@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# home-server-add-app: scaffold a new docker-deployed app behind Caddy.
+#
+# Creates:
+#   /srv/home-server/apps/<name>/    -- put your docker-compose.yml here
+#   /etc/caddy/apps/<name>.caddy     -- reverse proxy <name>.$DOMAIN -> 127.0.0.1:<port>
+#
+# Then reloads Caddy. Optionally enables docker-compose@<name>.service for autostart.
+set -euo pipefail
+
+CONFIG=/etc/home-server/config
+APPS_DIR=/srv/home-server/apps
+CADDY_DIR=/etc/caddy/apps
+
+usage() {
+  cat <<EOF
+usage: home-server-add-app <name> <port> [--enable]
+
+  <name>    lowercase alphanumeric + hyphens; becomes <name>.\$DOMAIN
+  <port>    local port the app listens on (127.0.0.1:<port>)
+  --enable  also enable docker-compose@<name>.service so it autostarts on boot
+            (requires a docker-compose.yml in $APPS_DIR/<name>/)
+EOF
+}
+
+if [[ $# -lt 2 ]]; then
+  usage >&2
+  exit 2
+fi
+
+NAME="$1"; shift
+PORT="$1"; shift
+ENABLE_UNIT=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --enable) ENABLE_UNIT=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+[[ -r "$CONFIG" ]] || { echo "missing $CONFIG; run home-server-setup first" >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$CONFIG"
+: "${DOMAIN:?DOMAIN must be set in $CONFIG}"
+
+if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "Invalid app name '$NAME'; use lowercase letters, digits, and hyphens (must start with a letter)." >&2
+  exit 1
+fi
+if [[ ! "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
+  echo "Invalid port '$PORT'." >&2
+  exit 1
+fi
+
+APP_DIR="$APPS_DIR/$NAME"
+SNIPPET="$CADDY_DIR/$NAME.caddy"
+
+if [[ -e "$SNIPPET" ]]; then
+  echo "Snippet already exists: $SNIPPET" >&2
+  exit 1
+fi
+
+sudo install -d -m 755 "$APP_DIR" "$CADDY_DIR"
+sudo tee "$SNIPPET" >/dev/null <<EOF
+$NAME.$DOMAIN {
+	reverse_proxy 127.0.0.1:$PORT
+}
+EOF
+
+echo "Created $SNIPPET"
+echo "Created $APP_DIR/"
+
+if ! sudo caddy validate --config /etc/caddy/Caddyfile >/dev/null; then
+  echo "Caddyfile failed validation; rolling back $SNIPPET." >&2
+  sudo rm -f "$SNIPPET"
+  exit 1
+fi
+sudo systemctl reload caddy
+echo "Reloaded caddy."
+
+if (( ENABLE_UNIT )); then
+  if [[ ! -f "$APP_DIR/docker-compose.yml" && ! -f "$APP_DIR/compose.yml" ]]; then
+    echo "Note: no compose file in $APP_DIR yet; not starting docker-compose@$NAME." >&2
+  else
+    sudo systemctl enable --now "docker-compose@$NAME.service"
+    echo "Enabled docker-compose@$NAME.service"
+  fi
+fi
+
+cat <<EOF
+
+Next:
+  1. Drop a docker-compose.yml in $APP_DIR/ that publishes the service to 127.0.0.1:$PORT.
+     Example:
+       services:
+         app:
+           image: <your-image>
+           restart: unless-stopped
+           ports:
+             - "127.0.0.1:$PORT:<container-port>"
+  2. Start it:
+       cd $APP_DIR && sudo docker compose up -d
+     ...or autostart on boot:
+       sudo systemctl enable --now docker-compose@$NAME.service
+  3. Make sure $NAME.$DOMAIN points to this server in DNS.
+EOF

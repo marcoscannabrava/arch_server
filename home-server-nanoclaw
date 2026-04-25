@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# home-server-nanoclaw: clone NanoClaw into /srv/home-server/nanoclaw
+# (or update an existing clone) and hand off to its interactive installer.
+#
+# NanoClaw connects agents to messaging apps (Telegram, Discord, WhatsApp, ...)
+# and runs them in their own Docker containers. It does not expose a public
+# HTTP endpoint by default, so no Caddy reverse proxy is created here -- the
+# upstream installer pairs your channel(s) interactively.
+#
+# Upstream: https://github.com/qwibitai/nanoclaw
+set -euo pipefail
+
+REPO_URL="https://github.com/qwibitai/nanoclaw.git"
+DEST="${NANOCLAW_DIR:-/srv/home-server/nanoclaw}"
+
+if [[ ! -d "$DEST/.git" ]]; then
+  sudo install -d -m 755 "$(dirname "$DEST")"
+  sudo git clone "$REPO_URL" "$DEST"
+  sudo chown -R "$USER":"$USER" "$DEST"
+  echo "Cloned NanoClaw into $DEST"
+else
+  echo "Updating existing NanoClaw clone in $DEST"
+  git -C "$DEST" pull --ff-only
+fi
+
+cd "$DEST"
+echo "Running upstream installer (bash nanoclaw.sh) ..."
+exec bash nanoclaw.sh
