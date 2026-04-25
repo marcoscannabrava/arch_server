@@ -1,4 +1,20 @@
-hello.{{DOMAIN}} {
-	root * /srv/home-server/hello
+# Apex: serve the static site.
+{{DOMAIN}} {
+	root * /srv/home-server/site
 	file_server
+	encode zstd gzip
 }
+
+# www: redirect to apex.
+www.{{DOMAIN}} {
+	redir https://{{DOMAIN}}{uri} permanent
+}
+
+# Per-app reverse proxies. Each file in /etc/caddy/apps/ defines a site like:
+#
+#   <app>.{{DOMAIN}} {
+#     reverse_proxy 127.0.0.1:<port>
+#   }
+#
+# Use `home-server-add-app <name> <port>` to scaffold a new one.
+import /etc/caddy/apps/*.caddy
