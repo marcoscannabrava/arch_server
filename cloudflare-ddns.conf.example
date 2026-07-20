@@ -7,4 +7,4 @@ CF_ZONE_ID=
 
 # Comma-separated A records to keep pointed at this server's public IP.
 # Each must already exist in the zone.
-CF_RECORDS=hello.example.com
+CF_RECORDS=example.com,www.example.com

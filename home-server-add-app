@@ -62,7 +62,7 @@ if [[ -e "$SNIPPET" ]]; then
   exit 1
 fi
 
-sudo install -d -m 755 "$APP_DIR" "$CADDY_DIR"
+sudo install -d -m 755 "$CADDY_DIR"
 sudo tee "$SNIPPET" >/dev/null <<EOF
 $NAME.$DOMAIN {
 	reverse_proxy 127.0.0.1:$PORT
@@ -70,13 +70,16 @@ $NAME.$DOMAIN {
 EOF
 
 echo "Created $SNIPPET"
-echo "Created $APP_DIR/"
 
 if ! sudo caddy validate --config /etc/caddy/Caddyfile >/dev/null; then
   echo "Caddyfile failed validation; rolling back $SNIPPET." >&2
   sudo rm -f "$SNIPPET"
   exit 1
 fi
+
+# Validation passed: now create the app working directory and reload.
+sudo install -d -m 755 "$APP_DIR"
+echo "Created $APP_DIR/"
 sudo systemctl reload caddy
 echo "Reloaded caddy."
 
