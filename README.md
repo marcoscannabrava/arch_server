@@ -1,23 +1,15 @@
 # home-server
 
 A small Arch Linux meta-package and helper scripts that turn a fresh
-machine into a personal home server. It bundles:
+machine into a personal home server.
 
-- **Caddy** — TLS-terminating reverse proxy with automatic Let's Encrypt
-  certificates, serving a static site at the apex domain and dispatching
-  `<app>.<domain>` to docker-deployed apps.
-- **Docker + Docker Compose** — for running the apps themselves.
-- **OpenSSH** — remote access.
-- **Cloudflare Dynamic DNS** — keeps DNS records pointed at the box's
-  current public IP via a systemd timer.
-- **NanoClaw bootstrap** — one command to clone and install the
-  [NanoClaw](https://github.com/qwibitai/nanoclaw) agent runtime.
+## features
+- **Caddy** — reverse proxy with TLS
+- **Docker + Docker Compose** — container runtime
+- **Cloudflare Dynamic DNS** — keeps DNS records pointed at the box if public IP changes
+- **NanoClaw** — AI agent
 
-The reference deployment in this README assumes the domain `m4s.dev`,
-but the package itself is parametric: `home-server-setup` prompts for
-your domain and substitutes it everywhere.
-
-## What you get
+`m4s.dev` used as example, but `home-server-setup` prompts for your domain.
 
 ```
                                   ┌──────────────────────┐
@@ -30,16 +22,12 @@ your domain and substitutes it everywhere.
                                   └──────────────────────┘
 ```
 
-- `m4s.dev` and `www.m4s.dev` both resolve to the box; `www` redirects
-  permanently to the apex.
+- `m4s.dev` and `www.m4s.dev` both resolve to the box;
 - Each docker app gets its own subdomain `<name>.m4s.dev`, its own
   directory under `/srv/home-server/apps/<name>/`, and its own Caddy
   snippet under `/etc/caddy/apps/<name>.caddy`.
-- A separate systemd timer keeps the Cloudflare A records for
-  `m4s.dev` and `www.m4s.dev` updated whenever the box's public IP
-  changes.
 
-## Layout on disk
+## files
 
 | Path | Purpose |
 |---|---|
@@ -61,17 +49,9 @@ your domain and substitutes it everywhere.
 
 ## From scratch (Arch → public static page)
 
-The rest of this README documents each piece in depth. This section is the
-ordered path that takes a **bare Arch Linux machine** all the way to a
-publicly reachable HTTPS static page, with a hardened SSH login along the way.
-Each step links into the detailed section below.
-
-The reference domain is `m4s.dev`; substitute your own throughout.
-
 ### 1. Install Arch Linux
 
-Follow the official
-[Installation Guide](https://wiki.archlinux.org/title/Installation_guide).
+Follow the [Installation Guide](https://wiki.archlinux.org/title/Installation_guide).
 - create root pass and sudo user
 - install:
   - openssh
@@ -82,32 +62,24 @@ Follow the official
 - enable firewall: ufw
 
 ```sh
-# note the box's LAN IP under wlan0 > inet
+# note the box's LAN IP under wlan0 -> inet
 ip a
 # enable ssh
 sudo systemctl enable --now sshd
-sudo ufw allow 22
-# never suspend / `unmask` to undo
+sudo ufw allow 22,80,443/tcp
+# never suspend (if it's a laptop) / `unmask` to undo
 sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 ```
 
 ### 2. SSH access (key-based, root login disabled)
 
-From **your laptop** (not the server), copy your public key over:
+From **your laptop** (not the server), copy your public key over to server:
 
 ```sh
-ssh-copy-id marcos@<box-lan-ip>
-```
-
-(No key yet? Generate one with `ssh-keygen -t ed25519` first. Manual
-alternative: create `~/.ssh/authorized_keys` on the box with mode `700` on
-`~/.ssh` and `600` on the file, and paste your public key into it.)
-
-Then harden `/etc/ssh/sshd_config` on the server — set these lines:
-
-```
-PasswordAuthentication no
-PermitRootLogin no
+# generate key first if you don't already have one
+ssh-keygen -t ed25519
+# copy key to server - use the user created above
+ssh-copy-id -i /path/to/key.pub marcos@<box-lan-ip>
 ```
 
 Add to ~/.ssh/config for convenience:
@@ -124,6 +96,13 @@ Now you can:
 ssh username@hostname
 ```
 
+Then harden `/etc/ssh/sshd_config` on the server — set these lines:
+```
+PasswordAuthentication no
+PermitRootLogin no
+```
+
+
 ### 3. Point DNS at the box
 
 Create the DNS records so the domain resolves to your server's **public** IP
@@ -138,41 +117,19 @@ A wildcard `*.m4s.dev → <public-ip>` is convenient if you'll add many apps.
 See [DNS](#dns) for details and the [Cloudflare DDNS](#cloudflare-dynamic-dns)
 section if the box's public IP changes over time.
 
-### 4. Make ports 80 and 443 reachable
-
-If the box is behind a home router, forward inbound TCP **80** and **443**
-(and **22** if you want SSH from outside the LAN) to the box's LAN IP.
-
-Caddy obtains Let's Encrypt certificates via the ACME challenge, which
-**requires port 80 to be reachable from the internet** — without it, TLS
-setup fails. Arch ships with **no firewall by default**, so nothing on the box
-blocks these ports. If you add one (`ufw` or `firewalld`), allow `22/tcp`,
-`80/tcp`, and `443/tcp`.
-
-### 6. Build and install the package
+### 4. Build, install and setup the package
 
 ```sh
-sudo pacman -S --needed base-devel git
+sudo pacman -S --needed base-devel git # if you haven't installed these during arch installation 
 git clone https://github.com/marcoscannabrava/arch_server.git home-server
 cd home-server
 makepkg -si
-```
 
-See [Building and installing](#building-and-installing) for the Docker-based
-smoke test.
-
-### 7. Run the setup wizard
-
-```sh
+# setup: enter your domain (e.g. `m4s.dev`) and cloudflare credentials
 home-server-setup
 ```
 
-Enter your domain (`m4s.dev`) at the prompt. Optionally supply Cloudflare
-credentials to enable [Dynamic DNS](#cloudflare-dynamic-dns); leave the token
-blank to skip it. The wizard enables `sshd`, `docker`, and `caddy`, renders
-the Caddyfile, and installs the default page. See [Initial setup](#initial-setup).
-
-### 8. Verify the page is public
+### 5. Verify the page is public
 
 ```sh
 dig +short m4s.dev            # -> your public IP
@@ -185,41 +142,7 @@ Then open `https://m4s.dev` in a browser — you should see the shipped
 [Troubleshooting](#troubleshooting) (certificate, 502, and DDNS cases are
 covered there).
 
-## Building and installing
-
-The package builds with `makepkg`. A Docker-based smoke test is
-included:
-
-```sh
-docker build -t home-server-pkg .
-docker run --rm home-server-pkg          # runs makepkg
-```
-
-To install on the actual host:
-
-```sh
-makepkg -si
-```
-
-The `home-server` package depends on `caddy`, `docker`, `docker-compose`,
-`openssh`, `nodejs`, `npm`, `git`, `curl`, and `jq`.
-
-## Initial setup
-
-Run the wizard once after install:
-
-```sh
-home-server-setup
-```
-
-It prompts for:
-
-1. Your domain (e.g. `m4s.dev`).
-2. A Cloudflare API token, zone ID, and the records to keep updated
-   (defaults to `<domain>,www.<domain>`). Leave the token blank to
-   skip DDNS configuration.
-
-Then it:
+## Home Server Setup Script: home-server-setup
 
 - Writes `/etc/home-server/config` with `DOMAIN=<your-domain>`.
 - Creates `/srv/home-server/{site,apps}` and `/etc/caddy/apps/`.
@@ -232,19 +155,6 @@ Caddy obtains TLS certificates from Let's Encrypt automatically on
 first request, so make sure your DNS records resolve to this box and
 ports 80 and 443 reach it before the first request.
 
-## DNS
-
-You need at least these records pointing at the server's public IP:
-
-| Name | Type | Value | Managed by DDNS? |
-|---|---|---|---|
-| `m4s.dev` | A | <public-ip> | yes (default) |
-| `www.m4s.dev` | A | <public-ip> | yes (default) |
-| `<app>.m4s.dev` | A | <public-ip> | optional — add to `CF_RECORDS` if you want them updated automatically |
-
-A wildcard `*.m4s.dev → <ip>` record also works and is convenient if
-you add many apps; in that case you only need DDNS to track the
-wildcard's parent records.
 
 ## Static site (apex + www)
 
@@ -262,22 +172,15 @@ sudo cp -r /path/to/your/site/. /srv/home-server/site/
 sudo systemctl reload caddy   # only needed if you change Caddyfile
 ```
 
-The Caddyfile uses `encode zstd gzip` so static assets are served
-compressed.
+The Caddyfile uses `encode zstd gzip` so static assets are served compressed.
 
 ## Adding a docker app
 
-The pattern is: app listens on a local port, Caddy reverse-proxies a
-subdomain to it.
+The pattern is: app listens on a local port, Caddy reverse-proxies a subdomain to it.
 
 ```sh
 home-server-add-app <name> <port>
-```
-
-For example, to expose Grafana on `grafana.m4s.dev`:
-
-```sh
-home-server-add-app grafana 3000
+# For example, to expose Grafana on `grafana.m4s.dev`: home-server-add-app grafana 3000
 ```
 
 This:
@@ -343,7 +246,7 @@ sudo systemctl reload caddy
 sudo rm -rf /srv/home-server/apps/<name>     # if you want the data gone
 ```
 
-## Cloudflare Dynamic DNS
+## Cloudflare Dynamic DNS Script: cloudflare-ddns
 
 The `cloudflare-ddns.timer` runs `cloudflare-ddns` every five minutes
 (plus once a minute after boot, with `Persistent=true` so missed runs
