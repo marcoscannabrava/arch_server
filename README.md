@@ -355,10 +355,10 @@ catch up). It:
 3. Compares against the cached value at
    `/var/lib/home-server/cloudflare-ddns.ip`.
 4. If changed, PATCHes each `A` record listed in `CF_RECORDS` via the
-   Cloudflare API and updates the cache.
+   Cloudflare API (creating it first if it doesn't exist yet) and
+   updates the cache.
 
-The script never **creates** records — they must already exist in your
-zone. Configure with:
+Configure with:
 
 ```ini
 # /etc/home-server/cloudflare-ddns.conf  (mode 600)
@@ -455,8 +455,7 @@ that the app is bound to `127.0.0.1`.
 **DDNS records aren't updating.** Run `sudo systemctl start
 cloudflare-ddns` once and check `journalctl -u cloudflare-ddns`.
 Common causes: API token missing the `Zone:DNS:Edit` permission for
-the zone, wrong `CF_ZONE_ID`, or a record name in `CF_RECORDS` that
-doesn't exist yet (the script refuses to create records).
+the zone, or a wrong `CF_ZONE_ID`.
 
 **`home-server-add-app` rolls back with "Caddyfile failed validation".**
 Two snippets bound to the same hostname will collide, as will syntax

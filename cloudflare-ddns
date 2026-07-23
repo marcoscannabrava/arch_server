@@ -46,7 +46,17 @@ for raw in "${RECORDS[@]}"; do
   current_ip="$(echo "$resp" | jq -r '.result[0].content // empty')"
 
   if [[ -z "$record_id" ]]; then
-    die "no A record named '$name' in zone $CF_ZONE_ID; create it first"
+    log "no A record named '$name' in zone $CF_ZONE_ID; creating it"
+    payload="$(jq -nc --arg name "$name" --arg ip "$PUBLIC_IP" \
+      '{type:"A", name:$name, content:$ip, ttl:1, proxied:false}')"
+    result="$(curl -fsS "${auth[@]}" -X POST \
+      "$CF_API/zones/$CF_ZONE_ID/dns_records" --data "$payload")"
+    if [[ "$(echo "$result" | jq -r '.success')" != "true" ]]; then
+      echo "$result" >&2
+      die "Cloudflare record creation failed for $name"
+    fi
+    log "created $name -> $PUBLIC_IP"
+    continue
   fi
 
   if [[ "$current_ip" == "$PUBLIC_IP" ]]; then
