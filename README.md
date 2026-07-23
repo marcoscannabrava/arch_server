@@ -72,38 +72,26 @@ The reference domain is `m4s.dev`; substitute your own throughout.
 
 Follow the official
 [Installation Guide](https://wiki.archlinux.org/title/Installation_guide).
-You only need the minimum: a machine that boots into Arch, has a working
-network connection, and can reach the internet. Confirm with:
+- create root pass and sudo user
+- install:
+  - openssh
+  - git
+  - base-devel
+  - networkmanager (or iwctl)
+  - micro (or another editor: vim, nano)
+- enable firewall: ufw
 
 ```sh
-ip a          # note the box's LAN IP
-ping -c1 archlinux.org
+# note the box's LAN IP under wlan0 > inet
+ip a
+# enable ssh
+sudo systemctl enable --now sshd
+sudo ufw allow 22
+# never suspend / `unmask` to undo
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 ```
 
-Everything below assumes you're logged in (as root or a user with root
-access) on that freshly installed box.
-
-### 2. Create an admin user with sudo
-
-The helper scripts (`home-server-setup`, `home-server-add-app`, …) all call
-`sudo`, so you need a non-root user in the `wheel` group and `sudo` installed:
-
-```sh
-pacman -S --needed sudo
-useradd -m -G wheel marcos
-passwd marcos
-EDITOR=nano visudo        # uncomment: %wheel ALL=(ALL:ALL) ALL
-```
-
-Log out and back in as that user (or `su - marcos`) for the rest of the setup.
-
-### 3. SSH access (key-based, root login disabled)
-
-Install and configure OpenSSH, then lock it down to key-only auth:
-
-```sh
-sudo pacman -S --needed openssh
-```
+### 2. SSH access (key-based, root login disabled)
 
 From **your laptop** (not the server), copy your public key over:
 
@@ -122,17 +110,21 @@ PasswordAuthentication no
 PermitRootLogin no
 ```
 
-Enable and start the service:
-
-```sh
-sudo systemctl enable --now sshd
+Add to ~/.ssh/config for convenience:
+```
+Host <hostname>
+  HostName <LOCAL_IP>
+  User <username>
+  IdentityFile /path/to/id_ed25519
+  IdentitiesOnly yes
 ```
 
-> **Verify key login works in a new terminal before closing your current
-> session** (`ssh marcos@<box-lan-ip>`). If you get locked out, you'll need
-> console access to fix it.
+Now you can:
+```sh
+ssh username@hostname
+```
 
-### 4. Point DNS at the box
+### 3. Point DNS at the box
 
 Create the DNS records so the domain resolves to your server's **public** IP
 (find it with `curl -fsS https://api.ipify.org`). At minimum:
@@ -146,7 +138,7 @@ A wildcard `*.m4s.dev → <public-ip>` is convenient if you'll add many apps.
 See [DNS](#dns) for details and the [Cloudflare DDNS](#cloudflare-dynamic-dns)
 section if the box's public IP changes over time.
 
-### 5. Make ports 80 and 443 reachable
+### 4. Make ports 80 and 443 reachable
 
 If the box is behind a home router, forward inbound TCP **80** and **443**
 (and **22** if you want SSH from outside the LAN) to the box's LAN IP.
@@ -161,7 +153,7 @@ blocks these ports. If you add one (`ufw` or `firewalld`), allow `22/tcp`,
 
 ```sh
 sudo pacman -S --needed base-devel git
-git clone https://github.com/marcos/home-server.git
+git clone https://github.com/marcoscannabrava/arch_server.git home-server
 cd home-server
 makepkg -si
 ```
